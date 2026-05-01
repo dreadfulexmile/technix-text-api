@@ -1,0 +1,97 @@
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const { findUserByUserName, createUser } = require('../models/user.model.js');
+
+const register = async (req, res) => {
+    try {
+        const { userName, password } = req.body;
+
+        if (!userName || !password) {
+            return res.status(400).json({ message: 'Username and password are required' });
+        }
+
+        findUserByUserName(userName, async (err, existingUser) => {
+            if (err) {
+                return res.status(500).json({ message: 'Database error', error: err.message });
+            }
+
+            if (existingUser) {
+                return res.status(409).json({ message: 'Username already exists' });
+            }
+
+            try {
+                const hashedPassword = await bcrypt.hash(password, 10);
+
+                createUser(
+                    { userName, password: hashedPassword },
+                    (err, userId) => {
+                        if (err) {
+                            return res.status(500).json({ message: 'Error creating user', error: err.message });
+                        }
+
+                        res.status(201).json({
+                            message: 'User registered successfully',
+                            userId
+                        });
+                    }
+                );
+            } catch (hashErr) {
+                res.status(500).json({ message: 'Error hashing password', error: hashErr.message });
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Registration failed', error: error.message });
+    }
+};
+
+const login = async (req, res) => {
+    try {
+        const { userName, password } = req.body;
+
+        if (!userName || !password) {
+            return res.status(400).json({ message: 'Username and password are required' });
+        }
+
+        findUserByUserName(userName, async (err, user) => {
+            if (err) {
+                return res.status(500).json({ message: 'Database error', error: err.message });
+            }
+
+            if (!user) {
+                return res.status(401).json({ message: 'Invalid username or password' });
+            }
+
+            try {
+                const isPasswordValid = await bcrypt.compare(password, user.password);
+
+                if (!isPasswordValid) {
+                    return res.status(401).json({ message: 'Invalid username or password' });
+                }
+
+                const token = jwt.sign(
+                    { userID: user.userID, userName: user.userName },
+                    process.env.JWT_SECRET,
+                    { expiresIn: '24h' }
+                );
+
+                res.status(200).json({
+                    message: 'Login successful',
+                    token,
+                    user: {
+                        userID: user.userID,
+                        userName: user.userName
+                    }
+                });
+            } catch (compareErr) {
+                res.status(500).json({ message: 'Error verifying password', error: compareErr.message });
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Login failed', error: error.message });
+    }
+};
+
+module.exports = {
+    register,
+    login
+};
