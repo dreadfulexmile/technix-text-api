@@ -1,6 +1,6 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { findUserByUserName, createUser, updateRefreshToken, clearRefreshToken, findUserByRefreshToken } = require('../models/user.model.js');
+const { findUserByUserName, createUser } = require('../models/user.model.js');
 
 const register = async (req, res) => {
     try {
@@ -71,7 +71,7 @@ const login = async (req, res) => {
                 const accessToken = jwt.sign(
                     { userID: user.userID, userName: user.userName },
                     process.env.JWT_SECRET,
-                    { expiresIn: '15m' }
+                    { expiresIn: '7d' }
                 );
 
                 const refreshToken = jwt.sign(
@@ -80,20 +80,14 @@ const login = async (req, res) => {
                     { expiresIn: '7d' }
                 );
 
-                updateRefreshToken(user.userID, refreshToken, (updateErr) => {
-                    if (updateErr) {
-                        return res.status(500).json({ message: 'Error storing refresh token', error: updateErr.message });
+                res.status(200).json({
+                    message: 'Login successful',
+                    accessToken,
+                    refreshToken,
+                    user: {
+                        userID: user.userID,
+                        userName: user.userName
                     }
-
-                    res.status(200).json({
-                        message: 'Login successful',
-                        accessToken,
-                        refreshToken,
-                        user: {
-                            userID: user.userID,
-                            userName: user.userName
-                        }
-                    });
                 });
             } catch (compareErr) {
                 res.status(500).json({ message: 'Error verifying password', error: compareErr.message });
@@ -114,28 +108,18 @@ const refresh = async (req, res) => {
 
         jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET, (err, decoded) => {
             if (err) {
-                return res.status(403).json({ message: 'Invalid refresh token' });
+                return res.status(403).json({ message: 'Invalid or expired refresh token' });
             }
 
-            findUserByRefreshToken(refreshToken, (dbErr, user) => {
-                if (dbErr) {
-                    return res.status(500).json({ message: 'Database error', error: dbErr.message });
-                }
+            const newAccessToken = jwt.sign(
+                { userID: decoded.userID, userName: decoded.userName },
+                process.env.JWT_SECRET,
+                { expiresIn: '15m' }
+            );
 
-                if (!user) {
-                    return res.status(403).json({ message: 'Refresh token not found' });
-                }
-
-                const newAccessToken = jwt.sign(
-                    { userID: user.userID, userName: user.userName },
-                    process.env.JWT_SECRET,
-                    { expiresIn: '15m' }
-                );
-
-                res.status(200).json({
-                    message: 'Token refreshed successfully',
-                    accessToken: newAccessToken
-                });
+            res.status(200).json({
+                message: 'Token refreshed successfully',
+                accessToken: newAccessToken
             });
         });
     } catch (error) {
@@ -145,25 +129,9 @@ const refresh = async (req, res) => {
 
 const logout = async (req, res) => {
     try {
-        const { refreshToken } = req.body;
-
-        if (!refreshToken) {
-            return res.status(400).json({ message: 'Refresh token is required' });
-        }
-
-        jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET, (err, decoded) => {
-            if (err) {
-                return res.status(403).json({ message: 'Invalid refresh token' });
-            }
-
-            clearRefreshToken(decoded.userID, (clearErr) => {
-                if (clearErr) {
-                    return res.status(500).json({ message: 'Error clearing refresh token', error: clearErr.message });
-                }
-
-                res.status(200).json({ message: 'Logout successful' });
-            });
-        });
+        // Logout is handled on the client side by removing tokens from localStorage
+        // No server-side action needed
+        res.status(200).json({ message: 'Logout successful' });
     } catch (error) {
         res.status(500).json({ message: 'Logout failed', error: error.message });
     }
